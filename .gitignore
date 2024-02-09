@@ -1,0 +1,10 @@
+*.log
+__pycache__
+firefox-data
+chrome-data
+data
+screenshots
+*.env
+*.csv
+*.skl
+*.db
