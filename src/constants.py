@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from os import getenv
 import sqlite3
 
-unit_size = .01
+unit_size = .09
 
 db = sqlite3.connect('../bets.db')
 db.row_factory = sqlite3.Row
@@ -46,7 +46,7 @@ class League(Enum):
 
 ALL_LEAGUES = list(League.__members__.values())
 PREDICTABLE_LEAGUES = ALL_LEAGUES.copy()
-PREDICTABLE_LEAGUES.remove(League.CBLOL)
+# PREDICTABLE_LEAGUES.remove(League.CBLOL)
 PREDICTABLE_LEAGUES.remove(League.CBLOLA)
 PREDICTABLE_LEAGUES.remove(League.SL)
 PREDICTABLE_LEAGUES.remove(League.TCL)
@@ -58,7 +58,7 @@ PREDICTABLE_LEAGUES.remove(League.LIT)
 PREDICTABLE_LEAGUES.remove(League.LEC)
 PREDICTABLE_LEAGUES.remove(League.LCKCL)
 PREDICTABLE_LEAGUES.remove(League.LCO)
-PREDICTABLE_LEAGUES.remove(League.LFL)
+# PREDICTABLE_LEAGUES.remove(League.LFL)
 
 rosters = pandas.read_csv('../data/rosters.csv')
 

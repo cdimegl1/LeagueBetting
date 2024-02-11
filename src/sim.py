@@ -41,9 +41,18 @@ def load_db():
         db_games.append(DB_Game(row))
     return db_games
 
+def sim_days(start, days):
+    total = 0.0
+    for _ in range(days):
+        units = sim_day(start)
+        total += units
+        start += timedelta(days=1)
+        print(f'{str(start)}: {units:+f}')
+    return total
+
 def sim_day(date):
     units = 0.0
-    model = train(str(date.date()))
+    model = train(str(date.date()), False)
     db_games = load_db()
     # db_games = [game for game in db_games if game.dt.date() == date.date() and game.league in PREDICTABLE_LEAGUES]
     db_games = [game for game in db_games if game.dt.date() == date.date()]
@@ -51,14 +60,14 @@ def sim_day(date):
         if real_win := get_winner(game, model.matches):
             change = -1
             units -= 1
-            blue_win = model.predict(game.blue_players+game.red_players, game.blue_champs+game.red_champs, game.league)
+            blue_win = model.predict(game.blue_players+game.red_players, game.blue_champs+game.red_champs, game.league, str(date.date()))
             if game.league in PREDICTABLE_LEAGUES:
-                if blue_win >= .60:
+                if blue_win >= .50:
                     if real_win == 1:
                         change = 1 / game.blue_odds
                         units += change
                         change -= 1
-                elif 1 - blue_win > .60:
+                elif 1 - blue_win > .50:
                     if real_win == 2:
                         change = 1 / game.red_odds
                         units += change
@@ -67,12 +76,12 @@ def sim_day(date):
                     units += 1
                     change = 0.0
             else:
-                if blue_win >= .75:
+                if blue_win >= .50:
                     if real_win == 1:
                         change = 1 / game.blue_odds
                         units += change
                         change -= 1
-                elif 1 - blue_win > .75:
+                elif 1 - blue_win > .50:
                     if real_win == 2:
                         change = 1 / game.red_odds
                         units += change
@@ -92,4 +101,5 @@ def sim_day(date):
                 #         change -= 1
             print(f'{game.league.string}: {game.blue_team} v {game.red_team} - {game.game} {blue_win:f} {change:+f}')
     print(f'{units:+f}')
+    return units
 

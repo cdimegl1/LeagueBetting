@@ -77,7 +77,7 @@ def get_games():
                     EC.presence_of_element_located((By.CSS_SELECTOR,
                                                     '.gamesListins_content.el_pg')))
             games = games.find_elements(By.TAG_NAME, 'a')[:10]
-            games = [Game(game) for game in games[:10]]
+            games = [Game(game) for game in games[:7]]
         except KeyboardInterrupt:
             _log.info('closing game schedule fetcher')
             driver.quit()
@@ -91,7 +91,7 @@ def get_games():
             break
     _log.debug('got games %s', games)
     _log.info('got games successfully')
-    return games[:10]
+    return games[:7]
 
 def match_games(site_games, api_games):
     matches = []
@@ -102,7 +102,7 @@ def match_games(site_games, api_games):
         for s in site_games:
             s1 = s.t1.lower()
             s2 = s.t2.lower()
-            if (fuzz.partial_ratio(a1, s1) + fuzz.partial_ratio(a2, s2)) > 130 or (fuzz.partial_ratio(a2, s1) + fuzz.partial_ratio(a1, s2)) > 130:
+            if (fuzz.partial_ratio(a1, s1) + fuzz.partial_ratio(a2, s2)) > 150 or (fuzz.partial_ratio(a2, s1) + fuzz.partial_ratio(a1, s2)) > 150:
                 if s.league and s.live and s.game > 0:
                     candidates.append((max(fuzz.partial_ratio(a1, s1) + fuzz.partial_ratio(a2, s2), fuzz.partial_ratio(a2, s1) + fuzz.partial_ratio(a1, s2)), s))
         if candidates:
@@ -236,7 +236,6 @@ class Bettor(Process):
                 blue_odds = right_odds
                 red_odds = left_odds
             else:
-                self.nav_to_odds_page()
                 _log.error('teams do not match')
                 return
             _log.info(site_game)
@@ -251,7 +250,6 @@ class Bettor(Process):
             if currency_before < 0.01:
                 _log.error('not enough currency')
                 log_bet(blue_team, red_team, site_game.game, players[:5], players[-5:], champs[:5], champs[-5:], blue_odds, red_odds, blue_win, red_win, site_game.league)
-                self.nav_to_odds_page()
                 return
             input_bet = WebDriverWait(self.driver, 10, poll_frequency=.5).until( EC.presence_of_element_located( (By.CLASS_NAME, 'betplacementAmount_input')))
             input_bet = input_bet.find_element(By.CSS_SELECTOR, "input")
@@ -355,7 +353,7 @@ def dispatch(excluded=[], game_nums={}):
         _log.info('reaped bettor')
         raise KeyboardInterrupt
     signal.signal(signal.SIGINT, cleanup)
-    time.sleep(90)
+    time.sleep(45)
     while True:
         site_games = None
         try:
@@ -373,7 +371,7 @@ def dispatch(excluded=[], game_nums={}):
         time.sleep(90)
 
 def run_model(model, players, champs, league):
-    return model.predict(players, champs, league)
+    return model.predict(players, champs, league, str(datetime.today().date()))
 
 def log_bet(blue_team, red_team, game, blue_players, red_players, blue_champs, red_champs, blue_odds, red_odds, blue_win, red_win, league):
     cur = constants.db.cursor()

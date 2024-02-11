@@ -71,19 +71,23 @@ class Players(Model):
                     total += mmrs.loc[player.lower()][0]
                 except KeyError:
                     missing += 1
-                    # _log.warning('failed to get player mmr', exc_info=True, stack_info=True)
+                    _log.warning('failed to get player mmr', exc_info=True, stack_info=True)
         average = total / (5 - missing)
         total += average * missing
         return total / 5
 
-    def get_mmrs(self, league: League):
+    def get_mmrs(self, league: League, end_date=str(datetime.today().date())):
+        if exists(f'{self.data_path}/{league.string}/{end_date}/player_mmrs.csv'):
+            return pandas.read_csv(f'{self.data_path}/{league.string}/{end_date}/player_mmrs.csv', index_col=0)
         return pandas.read_csv(f'{self.data_path}/{league.string}/player_mmrs.csv', index_col=0)
 
-    def train(self, k_function=k_linear, start_date='2022', end_date='3000'):
+    def train(self, k_function=k_linear, start_date='2022', end_date='3000', store=False):
         for league in self.leagues:
+            if not store and exists(f'{self.data_path}/{league.string}/{end_date}/player_mmrs.csv'):
+                continue
             matches = self.matches.loc[self.matches['Short'] == league.string]
             matches = matches.loc[matches['DateTime UTC'] > start_date]
-            matches = matches.loc[matches['DateTime UTC'] < end_date]
+            matches = matches.loc[matches['DateTime UTC'] < end_date+' 00:00:00']
             matches = matches.sort_values(['DateTime UTC'])
             all_players = []
             for team1, team2 in zip(matches['Team1Players'], matches['Team2Players']):
@@ -114,12 +118,16 @@ class Players(Model):
                     for player in team2:
                         mmrs[player.lower()] += change
             df = pandas.DataFrame.from_dict(mmrs, orient='index')
-            df.to_csv(f'{self.data_path}/{league.string}/player_mmrs.csv')
-
+            if store:
+                if not exists(f'{self.data_path}/{league.string}/{end_date}'):
+                    makedirs(f'{self.data_path}/{league.string}/{end_date}')
+                df.to_csv(f'{self.data_path}/{league.string}/{end_date}/player_mmrs.csv')
+            else:
+                df.to_csv(f'{self.data_path}/{league.string}/player_mmrs.csv')
 
 class Champions(Model):
 
-    def __init__(self, leagues=ALL_LEAGUES, player_model=None, league_specific_champs=True) -> None:
+    def __init__(self, leagues=ALL_LEAGUES, player_model=None, league_specific_champs=True, end_date=str(datetime.today().date())) -> None:
         if player_model:
             self.player_model = player_model
         else:
@@ -136,21 +144,25 @@ class Champions(Model):
             makedirs(f'{self.data_path}/all')
         self.player_mmrs = {}
         for league in leagues:
-            self.player_mmrs[league] = self.player_model.get_mmrs(league)
+            self.player_mmrs[league] = self.player_model.get_mmrs(league, end_date)
         self.league_specific_champs = league_specific_champs
 
-    def get_mmrs(self, league: League):
+    def get_mmrs(self, league: League, end_date=str(datetime.today().date())):
+        if exists(f'{self.data_path}/{league.string}/{end_date}/champions_mmrs.csv'):
+            return pandas.read_csv(f'{self.data_path}/{league.string}/{end_date}/champions_mmrs.csv', index_col=0)
         return pandas.read_csv(f'{self.data_path}/{league.string}/champion_mmrs.csv', index_col=0)
 
-    def train(self, k_function=k_linear, start_date='2022', end_date='3000'):
+    def train(self, k_function=k_linear, start_date='2022', end_date='3000', store=False):
         if self.league_specific_champs:
             for league in self.leagues:
+                if not store and exists(f'{self.data_path}/{league.string}/{end_date}/champion_mmrs.csv'):
+                    continue
                 matches = self.matches.loc[self.matches['Short'] == league.string]
                 matches = matches.loc[matches['DateTime UTC'] > start_date]
-                matches = matches.loc[matches['DateTime UTC'] < end_date]
+                matches = matches.loc[matches['DateTime UTC'] < end_date+' 00:00:00']
                 matches = matches.sort_values(['DateTime UTC'])
                 champ_mmrs = dict.fromkeys(champions, 1200.00)
-                player_mmrs = self.player_model.get_mmrs(league)
+                player_mmrs = self.player_model.get_mmrs(league, end_date)
                 k_values = k_function(matches)
                 for _, match in matches.iterrows():
                     winner = match['Winner']
@@ -175,11 +187,16 @@ class Champions(Model):
                         for champ in team2_picks:
                             champ_mmrs[champ] += change
                 df = pandas.DataFrame.from_dict(champ_mmrs, orient='index')
-                df.to_csv(f'{self.data_path}/{league.string}/champion_mmrs.csv')
+                if store:
+                    if not exists(f'{self.data_path}/{league.string}/{end_date}'):
+                        makedirs(f'{self.data_path}/{league.string}/{end_date}')
+                    df.to_csv(f'{self.data_path}/{league.string}/{end_date}/champion_mmrs.csv')
+                else:
+                    df.to_csv(f'{self.data_path}/{league.string}/champion_mmrs.csv')
         else:
             matches = self.matches.loc[self.matches['DateTime UTC'] > start_date]
             matches = matches.loc[matches['Short'].isin([league.string for league in self.leagues])]
-            matches = matches.loc[matches['DateTime UTC'] < end_date]
+            matches = matches.loc[matches['DateTime UTC'] < end_date+' 00:00:00']
             matches.sort_values(['DateTime UTC'])
             champ_mmrs = dict.fromkeys(champions, 1200.00)
             k_values = k_function(matches)
@@ -212,7 +229,7 @@ class Champions(Model):
 
 class PlayersAndChampions(Model):
 
-    def __init__(self, leagues=ALL_LEAGUES, champion_model=None):
+    def __init__(self, leagues=ALL_LEAGUES, champion_model=None, end_date=str(datetime.today().date())):
         if champion_model:
             self.champion_model = champion_model
         else:
@@ -230,7 +247,7 @@ class PlayersAndChampions(Model):
                 makedirs(f'{self.data_path}/{league.string}')
         if self.champion_model.league_specific_champs:
             for league in self.leagues:
-                self.champion_mmrs[league] = self.champion_model.get_mmrs(league)
+                self.champion_mmrs[league] = self.champion_model.get_mmrs(league, end_date)
         else:
             for league in self.leagues:
                 self.champion_mmrs[league] = pandas.read_csv(f'{self.champion_model.data_path}/all/champion_mmrs.csv', index_col=0)
@@ -246,7 +263,7 @@ class PlayersAndChampions(Model):
             try:
                 mmrs.append(self.player_mmrs[league].loc[player.lower()][0])
             except KeyError:
-                # _log.warning('failed to get player mmr', exc_info=True, stack_info=True)
+                _log.warning('failed to get player mmr', exc_info=True, stack_info=True)
                 missing += 1
         average = None
         try:
@@ -262,7 +279,7 @@ class PlayersAndChampions(Model):
             try:
                 mmrs.append(self.player_mmrs[league].loc[player.lower()][0])
             except KeyError:
-                # _log.warning('failed to get player mmr', exc_info=True, stack_info=True)
+                _log.warning('failed to get player mmr', exc_info=True, stack_info=True)
                 missing += 1
         try:
             average = sum(mmrs) / len(mmrs)
@@ -320,7 +337,7 @@ class PlayersAndChampions(Model):
     def create_training_data(self, start_date='2023-04', end_date='3000'):
         for league in self.leagues:
             rows = []
-            matches = self.matches.loc[(self.matches['Short'] == league.string) & (self.matches['DateTime UTC'] > start_date) & (self.matches['DateTime UTC'] < end_date)]
+            matches = self.matches.loc[(self.matches['Short'] == league.string) & (self.matches['DateTime UTC'] > start_date) & (self.matches['DateTime UTC'] < end_date+' 00:00:00')]
             if len(matches) > 0:
                 for _, match in matches.iterrows():
                     team1 = match['Team1Players'].split(',')
@@ -335,7 +352,7 @@ class PlayersAndChampions(Model):
                 df.columns = [*df.columns[:-2], 'red_win', 'DateTime UTC']
                 df.to_csv(f'{self.data_path}/{league.string}/training.csv', index=False)
 
-    def train(self, leagues=ALL_LEAGUES, classifier=LogisticRegression(max_iter=100000000, solver='liblinear', penalty='l1')):
+    def train(self, leagues=ALL_LEAGUES, classifier=LogisticRegression(max_iter=100000000, solver='liblinear', penalty='l1'), stored=False, date=str(datetime.today().date())):
         for league in leagues:
             df = pandas.read_csv(f'{self.data_path}/{league.string}/training.csv')
             # train, test = train_test_split(df, test_size=.1)
@@ -369,12 +386,18 @@ class PlayersAndChampions(Model):
             print(curr_max.coef_)
             print('train accuracy')
             print(curr_max.score(x_train, y_train))
-            pickle.dump(classifier_curr, open(f'{self.data_path}/{league.string}/model.skl', 'wb'))
+            if stored:
+                if not exists(f'{self.data_path}/{league.string}/{date}'):
+                    makedirs(f'{self.data_path}/{league.string}/{date}')
+                pickle.dump(classifier_curr, open(f'{self.data_path}/{league.string}/{date}/model.skl', 'wb'))
+            else:
+                pickle.dump(classifier_curr, open(f'{self.data_path}/{league.string}/model.skl', 'wb'))
+
             # pickle.dump(scaler, open(f'{self.data_path}/{league.string}/scaler.skl', 'wb'))
 
-    def predict(self, players, champs, league):
+    def predict(self, players, champs, league, date=''):
         v = self.vec(players[:5], players[-5:], champs[:5], champs[-5:], league)
-        model = pickle.load(open(f'{self.data_path}/{league.string}/model.skl', 'rb'))
+        model = pickle.load(open(f'{self.data_path}/{league.string}/model.skl', 'rb')) if not date else pickle.load(open(f'{self.data_path}/{league.string}/{date}/model.skl', 'rb'))
         v = [v]
         # scaler = pickle.load(open(f'{self.data_path}/{league.string}/scaler.skl', 'rb'))
         # v = scaler.transform(v)
@@ -386,7 +409,7 @@ class PlayersAndChampions(Model):
         total = 0
         for league in self.leagues:
             df = pandas.read_csv(f'{self.data_path}/{league.string}/training.csv')
-            train = df.loc[df['DateTime UTC'] < end_date]
+            train = df.loc[df['DateTime UTC'] < end_date+' 00:00:00']
             test = df.loc[df['DateTime UTC'] > end_date]
             if len(test) == 0:
                 continue
@@ -456,15 +479,16 @@ def test(start_date='2023-04', end_date=str(datetime.now() - timedelta(days=1)))
     combined.test(end_date)
     return combined
 
-def train(end_date='3000'):
+def train(end_date=str(datetime.today().date()), store=True):
     leagues = ALL_LEAGUES
     players = Players(leagues)
-    players.train(k_exponential, start_date='2023-04', end_date=end_date)
-    champs = Champions(leagues, players, True)
-    champs.train(k_exponential, start_date='2023-04', end_date=end_date)
-    combined = PlayersAndChampions(leagues, champs)
-    combined.create_training_data('2023-04', end_date=end_date)
-    combined.train()
+    players.train(k_exponential, start_date='2023-04', end_date=end_date, store=store)
+    champs = Champions(leagues, players, True, end_date)
+    champs.train(k_exponential, start_date='2023-04', end_date=end_date, store=store)
+    combined = PlayersAndChampions(leagues, champs, end_date)
+    if store:
+        combined.create_training_data('2023-04', end_date=end_date)
+        combined.train(stored=True, date=end_date)
     return combined
 
 def test_days(train_start='2023-04', start_date=datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=7), days=7):
@@ -509,8 +533,12 @@ def select_side(left_side, right_side, league, left_win, right_win, left_odds, r
         elif right_win > 0.5:
             right_side.click()
             return True
-        else:
-            return False
     else:
-        return False
+        if left_win > 0.5:
+            left_side.click()
+            return True
+        elif right_win > 0.5:
+            right_side.click()
+            return True
+    return False
 
