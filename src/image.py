@@ -4,6 +4,8 @@ import constants
 import pytesseract
 import numpy as np
 from fuzzywuzzy import process, fuzz, utils
+from constants import champions
+os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = '/usr/lib/x86_64-linux-gnu/qt5/plugins'
 
 pytesseract.pytesseract.tesseract_cmd = constants.TESSERACT_BINARY
 
@@ -12,11 +14,11 @@ def crop_image(im):
 
 def ocr(image):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    binary = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
-                                   cv2.THRESH_BINARY_INV, 25, -60)
+    binary = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                   cv2.THRESH_BINARY, 45, -30)
     img = cv2.bitwise_not(binary)
-    #cv2.imshow('img', img)
-    #cv2.waitKey(0)
+    # cv2.imshow('img', img)
+    # cv2.waitKey(0)
     return pytesseract.image_to_string(img)
 
 def get_champs(image):
@@ -57,7 +59,9 @@ def get_champs(image):
         yVal = dst[0][0][1]
         results.append((name, yVal))
     results.sort(key = lambda x: x[1])
-    return [x[0] for x in results]
+    champs = [x[0] for x in results]
+    champs = [process.extractOne(x, champions)[0] for x in champs]
+    return champs
 
 def get_names(image, team1, team2, league):
     names = []
@@ -88,10 +92,10 @@ def get_names(image, team1, team2, league):
     yVals = [i * k for i in range(5)]
     for y in yVals:
         candidates = []
-        for j in range(8):
+        for j in range(4):
             y = y + j 
-            name = ocr(image[y:y+h, 0:100])
-            #print(name)
+            name = ocr(image[y:y+h, 0:100])[2:]
+            # print(name)
             if utils.full_process(name):
                 #team1Res = process.extractOne(name, team1, scorer=fuzz.partial_ratio)
                 #team2Res = process.extractOne(name, team2, scorer=fuzz.partial_ratio)
@@ -102,7 +106,7 @@ def get_names(image, team1, team2, league):
                 score = score + team2Res[1]
                 candidates.append(team1Res if team1Res[1] > team2Res[1] else team2Res)
                 #if abs(team1Res[1] - team2Res[1]) > 90:
-                if team1Res[1] > 60 or team2Res[1] > 60:
+                if team1Res[1] > 85 or team2Res[1] > 85:
                     break
         names.append(max(candidates, key = lambda x: x[1])[0])
         final_score = final_score + max(candidates, key = lambda x: x[1])[1]

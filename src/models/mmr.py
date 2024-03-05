@@ -29,7 +29,7 @@ def k_linear(matches, k=100):
         i += step
     return tourn_to_k
 
-def k_exponential(matches, k=100):
+def k_exponential(matches, k=75):
     unique = matches['Tournament'].unique()
     tourn_to_k = {}
     step = k / (2 ** len(unique))
@@ -71,12 +71,12 @@ class Players(Model):
                     total += mmrs.loc[player.lower()][0]
                 except KeyError:
                     missing += 1
-                    _log.warning('failed to get player mmr', exc_info=True, stack_info=True)
+                    _log.warning('failed to get player mmr: %s', player)
         average = total / (5 - missing)
         total += average * missing
         return total / 5
 
-    def get_mmrs(self, league: League, end_date=str(datetime.today().date())):
+    def get_mmrs(self, league: League, end_date=str(datetime.utcnow().date())):
         if exists(f'{self.data_path}/{league.string}/{end_date}/player_mmrs.csv'):
             return pandas.read_csv(f'{self.data_path}/{league.string}/{end_date}/player_mmrs.csv', index_col=0)
         return pandas.read_csv(f'{self.data_path}/{league.string}/player_mmrs.csv', index_col=0)
@@ -127,7 +127,7 @@ class Players(Model):
 
 class Champions(Model):
 
-    def __init__(self, leagues=ALL_LEAGUES, player_model=None, league_specific_champs=True, end_date=str(datetime.today().date())) -> None:
+    def __init__(self, leagues=ALL_LEAGUES, player_model=None, league_specific_champs=True, end_date=str(datetime.utcnow().date())) -> None:
         if player_model:
             self.player_model = player_model
         else:
@@ -147,7 +147,7 @@ class Champions(Model):
             self.player_mmrs[league] = self.player_model.get_mmrs(league, end_date)
         self.league_specific_champs = league_specific_champs
 
-    def get_mmrs(self, league: League, end_date=str(datetime.today().date())):
+    def get_mmrs(self, league: League, end_date=str(datetime.utcnow().date())):
         if exists(f'{self.data_path}/{league.string}/{end_date}/champions_mmrs.csv'):
             return pandas.read_csv(f'{self.data_path}/{league.string}/{end_date}/champions_mmrs.csv', index_col=0)
         return pandas.read_csv(f'{self.data_path}/{league.string}/champion_mmrs.csv', index_col=0)
@@ -229,7 +229,7 @@ class Champions(Model):
 
 class PlayersAndChampions(Model):
 
-    def __init__(self, leagues=ALL_LEAGUES, champion_model=None, end_date=str(datetime.today().date())):
+    def __init__(self, leagues=ALL_LEAGUES, champion_model=None, end_date=str(datetime.utcnow().date())):
         if champion_model:
             self.champion_model = champion_model
         else:
@@ -255,7 +255,7 @@ class PlayersAndChampions(Model):
     def get_training(self, league: League):
         return pandas.read_csv(f'{self.data_path}/{league.string}/training.csv')
 
-    def vec(self, team1_players, team2_players, team1_champs, team2_champs, league):
+    def vec(self, team1_players, team2_players, team1_champs, team2_champs, league, trace=False):
         v = []
         mmrs = []
         missing = 0
@@ -263,13 +263,15 @@ class PlayersAndChampions(Model):
             try:
                 mmrs.append(self.player_mmrs[league].loc[player.lower()][0])
             except KeyError:
-                _log.warning('failed to get player mmr', exc_info=True, stack_info=True)
+                _log.warning('failed to get player mmr: %s', player)
                 missing += 1
         average = None
         try:
             average = sum(mmrs) / len(mmrs)
         except Exception:
             average = 1200
+        if trace:
+            _log.info(mmrs)
         for _ in range(missing):
             mmrs.append(average)
         v.append(sum(mmrs) / len(mmrs))
@@ -279,12 +281,14 @@ class PlayersAndChampions(Model):
             try:
                 mmrs.append(self.player_mmrs[league].loc[player.lower()][0])
             except KeyError:
-                _log.warning('failed to get player mmr', exc_info=True, stack_info=True)
+                _log.warning('failed to get player mmr: %s', player)
                 missing += 1
         try:
             average = sum(mmrs) / len(mmrs)
         except Exception:
             average = 1200
+        if trace:
+            _log.info(mmrs)
         for _ in range(missing):
             mmrs.append(average)
         v.append(sum(mmrs) / len(mmrs))
@@ -297,6 +301,8 @@ class PlayersAndChampions(Model):
                 _log.warning('failed to get champion mmr', exc_info=True, stack_info=True)
                 missing += 1
         average = sum(mmrs) / len(mmrs)
+        if trace:
+            _log.info(mmrs)
         for _ in range(missing):
             mmrs.append(average)
         v.append(sum(mmrs) / len(mmrs))
@@ -309,9 +315,13 @@ class PlayersAndChampions(Model):
                 _log.warning('failed to get champion mmr', exc_info=True, stack_info=True)
                 missing += 1
         average = sum(mmrs) / len(mmrs)
+        if trace:
+            _log.info(mmrs)
         for _ in range(missing):
             mmrs.append(average)
         v.append(sum(mmrs) / len(mmrs))
+        if trace:
+            _log.info(v)
         v[0] = expected(v[0], v[1])
         v[1] = 1 - v[0]
         v[2] = expected(v[2], v[3])
@@ -352,7 +362,7 @@ class PlayersAndChampions(Model):
                 df.columns = [*df.columns[:-2], 'red_win', 'DateTime UTC']
                 df.to_csv(f'{self.data_path}/{league.string}/training.csv', index=False)
 
-    def train(self, leagues=ALL_LEAGUES, classifier=LogisticRegression(max_iter=100000000, solver='liblinear', penalty='l1'), stored=False, date=str(datetime.today().date())):
+    def train(self, leagues=ALL_LEAGUES, classifier=LogisticRegression(max_iter=100000000, solver='lbfgs', penalty=None), stored=False, date=str(datetime.utcnow().date())):
         for league in leagues:
             df = pandas.read_csv(f'{self.data_path}/{league.string}/training.csv')
             # train, test = train_test_split(df, test_size=.1)
@@ -395,16 +405,17 @@ class PlayersAndChampions(Model):
 
             # pickle.dump(scaler, open(f'{self.data_path}/{league.string}/scaler.skl', 'wb'))
 
-    def predict(self, players, champs, league, date=''):
-        v = self.vec(players[:5], players[-5:], champs[:5], champs[-5:], league)
+    def predict(self, players, champs, league, date='', trace=False):
+        v = self.vec(players[:5], players[-5:], champs[:5], champs[-5:], league, trace)
         model = pickle.load(open(f'{self.data_path}/{league.string}/model.skl', 'rb')) if not date else pickle.load(open(f'{self.data_path}/{league.string}/{date}/model.skl', 'rb'))
         v = [v]
         # scaler = pickle.load(open(f'{self.data_path}/{league.string}/scaler.skl', 'rb'))
         # v = scaler.transform(v)
-        _log.info(v)
+        if trace:
+            _log.info(v)
         return model.predict_proba(v)[0][0]
 
-    def test(self, end_date, classifier=LogisticRegression(max_iter=100000000, solver='liblinear', penalty='l1')):
+    def test(self, end_date, classifier=LogisticRegression(max_iter=100000000, solver='liblinear', penalty='l2')):
         num_correct = 0
         total = 0
         for league in self.leagues:
@@ -479,12 +490,12 @@ def test(start_date='2023-04', end_date=str(datetime.now() - timedelta(days=1)))
     combined.test(end_date)
     return combined
 
-def train(end_date=str(datetime.today().date()), store=True):
+def train(end_date=str(datetime.utcnow().date()), store=True):
     leagues = ALL_LEAGUES
     players = Players(leagues)
     players.train(k_exponential, start_date='2023-04', end_date=end_date, store=store)
     champs = Champions(leagues, players, True, end_date)
-    champs.train(k_exponential, start_date='2023-04', end_date=end_date, store=store)
+    champs.train(k_constant, start_date='2024-00-00', end_date=end_date, store=store)
     combined = PlayersAndChampions(leagues, champs, end_date)
     if store:
         combined.create_training_data('2023-04', end_date=end_date)
@@ -525,20 +536,31 @@ def test_days(train_start='2023-04', start_date=datetime.now().replace(hour=0, m
             print(f'{league.string}\ngames: {leagues_total[league]}\naccuracy: {leagues_correct[league]/leagues_total[league]}')
     print(f'total: {sum(leagues_correct.values())/sum(leagues_total.values())}')
 
-def select_side(left_side, right_side, league, left_win, right_win, left_odds, right_odds):
+def select_side(league, left_win, right_win, left_odds, right_odds, vec):
     if league in PREDICTABLE_LEAGUES:
-        if left_win > 0.5:
-            left_side.click()
-            return True
-        elif right_win > 0.5:
-            right_side.click()
-            return True
+        if left_win > 0.45 and left_win > left_odds:
+            return 1
+        elif right_win > 0.46 and right_win > right_odds:
+            return 2
     else:
-        if left_win > 0.5:
-            left_side.click()
-            return True
-        elif right_win > 0.5:
-            right_side.click()
-            return True
-    return False
+        if left_win > .5 and vec[2] > .62:
+            return 1
+        elif right_win > .5 and vec[3] > .64:
+            return 2
+    return 0
+    # if league in PREDICTABLE_LEAGUES:
+    #     if left_win > 0.5:
+    #         left_side.click()
+    #         return True
+    #     elif right_win > 0.5:
+    #         right_side.click()
+    #         return True
+    # else:
+    #     if left_win > 0.5:
+    #         left_side.click()
+    #         return True
+    #     elif right_win > 0.5:
+    #         right_side.click()
+    #         return True
+    # return False
 

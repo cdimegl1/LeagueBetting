@@ -3,9 +3,12 @@ import json
 import datetime
 from constants import rosters, champions, API_KEY
 from fuzzywuzzy import fuzz, process
+from logging import getLogger
 
 API_URL = 'https://esports-api.lolesports.com/persisted/gw'
 LIVE_API_URL = 'https://feed.lolesports.com/livestats/v1'
+
+_log = getLogger('main.api')
 
 def get_event_details(matchId):
     response = json.loads(requests.get(API_URL+'/getEventDetails', params={'hl': 'en-US', 'id': matchId}, headers={'x-api-key': API_KEY}).text)
@@ -26,9 +29,9 @@ def get_schedule():
                 for game in match['data']['event']['match']['games']:
                     if game['state'] in ('unstarted', 'inProgress'):
                         window = get_game_window(game['id'])
-                        g = Game(t1, t2, window, game['id'])
+                        g = Game(t1, t2, window, game['id'], game['number'])
                         results.append(g)
-                        print(g.blue_team, g.red_team, g.blue_players, g.red_players, g.blue_champs, g.red_champs)
+                        print(g.blue_team, g.red_team, g.blue_players, g.red_players, g.blue_champs, g.red_champs, g.blue_code, g.red_code)
         except Exception as e:
             pass
             #print(e)
@@ -40,8 +43,9 @@ def get_game_window(gameId):
     return response
 
 class Game:
-    def __init__(self, t1, t2, window, gameId):
+    def __init__(self, t1, t2, window, gameId, number):
         self.gameId = gameId
+        self.number = number
         blue_team_MD = window['gameMetadata']['blueTeamMetadata']
         red_team_MD = window['gameMetadata']['redTeamMetadata']
         if t1['id'] == blue_team_MD['esportsTeamId']:
@@ -78,6 +82,7 @@ class Game:
     def get_players(self):
         bt = self.blue_code.lower()
         rt = self.red_code.lower()
+        _log.info(f'{bt} {rt}')
 
         team_names = rosters['Short']
 

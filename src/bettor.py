@@ -26,7 +26,11 @@ _log = getLogger('main.bettor')
 class Game:
     def __init__(self, game):
         self.t1 = game.find_element(By.CSS_SELECTOR, '.teamName.leftname').text
+        if self.t1 == 'Nongshim Esports Academy':
+            self.t1 = 'Nongshim Esports Academy'
         self.t2 = game.find_element(By.CSS_SELECTOR, '.teamName.rightname').text
+        if self.t2 == 'Kwandgong Freecs Challengers':
+            self.t2 = 'KDF Challengers'
         self.matchid = int(game.get_attribute('data-parentmatchid'))
         try:
             game_str = game.find_element(By.CLASS_NAME, 'info').text
@@ -50,6 +54,51 @@ class Game:
             return f'{self.league.string}: {self.t1} v {self.t2} game {self.game:d}'
         else:
             return f'{self.t1} v {self.t2} game {self.game:d}'
+
+class GameFetcher:
+    def __init__(self) -> None:
+        options = webdriver.ChromeOptions() 
+        options.add_argument("--disable-blink-features=AutomationControlled") 
+        options.add_experimental_option("excludeSwitches", ["enable-automation"]) 
+        options.add_experimental_option("useAutomationExtension", False) 
+        options.add_argument("--enable-features=UseOzonePlatform")
+        options.add_argument("--ozone-platform=wayland")
+        self.driver = webdriver.Chrome(options=options) 
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})") 
+        self.driver.get('https://www.esportsbet.io/esportsbull/')
+        self.set = False
+    
+    def get_games(self):
+        games = []
+        while True:
+            try:
+                if not self.set:
+                    WebDriverWait(self.driver, 30, poll_frequency=2).until(
+                            EC.frame_to_be_available_and_switch_to_it('iFrameResizer0'))
+                    old_button = WebDriverWait(self.driver, 60, poll_frequency=1).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR,
+                                                            '.prodBtn.oldEsports'))).click()
+                    WebDriverWait(self.driver, 60, poll_frequency=2).until(
+                            EC.presence_of_element_located((By.CLASS_NAME,
+                                                            'gametype_btn'))).click()
+                    time.sleep(1)
+                    self.set = True
+                games = WebDriverWait(self.driver, 60, poll_frequency=2).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR,
+                                                        '.gamesListins_content.el_pg')))
+                games = games.find_elements(By.TAG_NAME, 'a')[:10]
+                games = [Game(game) for game in games[:7]]
+                _log.info('got games successfully')
+                return games[:7]
+            except KeyboardInterrupt:
+                _log.info('closing game schedule fetcher')
+                self.driver.quit()
+                return
+            except Exception:
+                _log.warn('failed to get games', exc_info=True, stack_info=True)
+                self.set = False
+                self.driver.get('https://www.esportsbet.io/esportsbull/')
+                continue
 
 def get_games():
     games = []
@@ -97,12 +146,16 @@ def match_games(site_games, api_games):
     matches = []
     for a in api_games:
         a1 = a.blue_team.lower()
+        # a1 = a1.replace('challengers', '')
         a2 = a.red_team.lower()
+        # a2 = a2.replace('challengers', '')
         candidates = []
         for s in site_games:
             s1 = s.t1.lower()
             s2 = s.t2.lower()
-            if (fuzz.partial_ratio(a1, s1) + fuzz.partial_ratio(a2, s2)) > 150 or (fuzz.partial_ratio(a2, s1) + fuzz.partial_ratio(a1, s2)) > 150:
+            # s1 = s1.replace('challengers', '')
+            # s2 = s2.replace('challengers', '')
+            if (fuzz.partial_ratio(a1, s1) + fuzz.partial_ratio(a2, s2)) > 140 or (fuzz.partial_ratio(a2, s1) + fuzz.partial_ratio(a1, s2)) > 140:
                 if s.league and s.live and s.game > 0:
                     candidates.append((max(fuzz.partial_ratio(a1, s1) + fuzz.partial_ratio(a2, s2), fuzz.partial_ratio(a2, s1) + fuzz.partial_ratio(a1, s2)), s))
         if candidates:
@@ -137,9 +190,8 @@ class Bettor(Process):
             login[0].send_keys(constants.ESPORTSBETIO_USERNAME)
             login[1].clear()
             login[1].send_keys(constants.ESPORTSBETIO_PASSWORD)
-            time.sleep(2)
-            self.driver.find_element(By.CSS_SELECTOR,'.CustomButtonStyled__Button-sc-1fr3aja-0.blQEmU').click()
-            time.sleep(5)
+            # self.driver.find_element(By.CSS_SELECTOR,'.CustomButtonStyled__Button-sc-1fr3aja-0.blQEmU').click()
+            time.sleep(15)
             _log.info('logged in')
         except Exception:
             _log.info('already logged in')
@@ -198,13 +250,16 @@ class Bettor(Process):
             try:
                 games = WebDriverWait(self.driver, 10, poll_frequency=2).until( EC.presence_of_element_located((By.CSS_SELECTOR, '.gamesListins_content.el_pg')))
                 games = games.find_elements(By.TAG_NAME, 'a')[:10]
+                found = False
                 for g in games:
                     matchid = int(g.get_attribute('data-parentmatchid'))
                     if matchid == site_game.matchid:
                         self.driver.execute_script("arguments[0].click();", g)
                         # g.click()
                         _log.info('clicked match %s', site_game)
+                        found = True
                         break
+                assert found
                 time.sleep(5)
             except Exception:
                 _log.warn('failed to click game %s', site_game, exc_info=True, stack_info=True)
@@ -213,11 +268,11 @@ class Bettor(Process):
             else:
                 break
 
-    def input_bet(self, site_game, api_game, players, champs, blue_team, red_team, blue_win, red_win):
+    def input_bet(self, site_game, api_game, players, champs, blue_team, red_team, blue_win, red_win, vec):
         try:
             currency_before = float(self.driver.find_element(By.CSS_SELECTOR, '.CurrencyBalanceDropdownStyled__Amount-sc-ey47rs-9.aenmd').text)
             WebDriverWait(self.driver, 20, poll_frequency=2).until(EC.frame_to_be_available_and_switch_to_it('iFrameResizer0'))
-            left_side = WebDriverWait(self.driver, 60, poll_frequency=0.5).until( EC.presence_of_element_located( (By.CSS_SELECTOR, '.ah_odds_button.ah_left:not(.paused)')))
+            left_side = WebDriverWait(self.driver, 180, poll_frequency=0.5).until( EC.presence_of_element_located( (By.CSS_SELECTOR, '.ah_odds_button.ah_left:not(.paused)')))
             right_side = self.driver.find_element(By.CSS_SELECTOR, '.ah_odds_button.ah_right')
             left_odds = 1 / float(left_side.find_element(By.CLASS_NAME, 'ah_odds').text)
             right_odds = 1 / float(right_side.find_element(By.CLASS_NAME, 'ah_odds').text)
@@ -241,15 +296,25 @@ class Bettor(Process):
             _log.info(site_game)
             _log.info('model odds: %f %f', left_win, right_win)
             _log.info('site odds: %f %f', left_odds, right_odds)
-            selected = models.mmr.select_side(left_side, right_side, site_game.league, left_win, right_win, left_odds, right_odds)
-            if not selected:
+            on = select_side(constants.coefs[site_game.league], blue_odds, red_odds, blue_win, vec) 
+            if True:
                 _log.info('no bet placed for %s', site_game)
-                log_bet(blue_team, red_team, site_game.game, players[:5], players[-5:], champs[:5], champs[-5:], blue_odds, red_odds, blue_win, red_win, site_game.league)
+                log_bet(blue_team, red_team, site_game.game, players[:5], players[-5:], champs[:5], champs[-5:], blue_odds, red_odds, blue_win, red_win, site_game.league, on)
                 return
+            if on == 1:
+                if blue_team == site_game.t1:
+                    left_side.click()
+                else:
+                    right_side.click()
+            elif on == 2:
+                if red_team == site_game.t2:
+                    right_side.click()
+                else:
+                    left_side.click()
             amount = max(amount, .01)
             if currency_before < 0.01:
                 _log.error('not enough currency')
-                log_bet(blue_team, red_team, site_game.game, players[:5], players[-5:], champs[:5], champs[-5:], blue_odds, red_odds, blue_win, red_win, site_game.league)
+                log_bet(blue_team, red_team, site_game.game, players[:5], players[-5:], champs[:5], champs[-5:], blue_odds, red_odds, blue_win, red_win, site_game.league, on)
                 return
             input_bet = WebDriverWait(self.driver, 10, poll_frequency=.5).until( EC.presence_of_element_located( (By.CLASS_NAME, 'betplacementAmount_input')))
             input_bet = input_bet.find_element(By.CSS_SELECTOR, "input")
@@ -258,7 +323,7 @@ class Bettor(Process):
             bet_button = self.driver.find_element(By.CLASS_NAME, 'betButton')
             self.driver.execute_script('arguments[0].scrollIntoView();', bet_button)
             bet_button.click()
-            success = WebDriverWait(self.driver, 15, poll_frequency=.5).until( EC.presence_of_element_located( (By.CLASS_NAME, 'bet_success_status'))).text
+            success = WebDriverWait(self.driver, 30, poll_frequency=.5).until( EC.presence_of_element_located( (By.CLASS_NAME, 'bet_success_status'))).text
             assert 'Bet Placed Successfully' in success, 'betting error: bet did not go through'
         except Exception:
             _log.warn('retrying bet for %s', site_game, exc_info=True)
@@ -268,7 +333,7 @@ class Bettor(Process):
                 self.q.put((site_game, players, champs, blue_team, red_team))
         else:
             _log.info('placed bet for %s', site_game)
-            log_bet(blue_team, red_team, site_game.game, players[:5], players[-5:], champs[:5], champs[-5:], blue_odds, red_odds, blue_win, red_win, site_game.league)
+            log_bet(blue_team, red_team, site_game.game, players[:5], players[-5:], champs[:5], champs[-5:], blue_odds, red_odds, blue_win, red_win, site_game.league, on)
 
     def place_bet(self, site_game, api_game, players, champs, blue_team, red_team):
 
@@ -283,7 +348,9 @@ class Bettor(Process):
 
         _log.info('blue team: %s', blue_team)
         _log.info('red team: %s', red_team)
-        blue_win = run_model(models.mmr.PlayersAndChampions(), players, champs, site_game.league)
+        model = models.mmr.PlayersAndChampions()
+        blue_win = run_model(model, players, champs, site_game.league)
+        vec = model.vec(players[:5], players[-5:], champs[:5], champs[-5:], site_game.league)
         red_win = 1 - blue_win
         _log.info('blue win: %f', blue_win)
         _log.info('red win: %f', red_win)
@@ -299,7 +366,7 @@ class Bettor(Process):
                 self.q.put((site_game, players, champs, blue_team, red_team))
             return
         self.driver.switch_to.parent_frame()
-        self.input_bet(site_game, api_game, players, champs, blue_team, red_team, blue_win, red_win)
+        self.input_bet(site_game, api_game, players, champs, blue_team, red_team, blue_win, red_win, vec)
 
     def run(self):
         def cleanup(num, frame):
@@ -344,20 +411,20 @@ def dispatch(excluded=[], game_nums={}):
     gIds = []
     q = Queue()
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    # original_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
     bettor = Bettor(q)
-    bettor.start()
-    # dispatcher = watcher.Dispatcher()
+    # bettor.start()
+    dispatcher = watcher.Dispatcher(game_nums)
+    fetcher = GameFetcher()
     def cleanup(signum, frame):
         bettor.join()
         _log.info('reaped bettor')
         raise KeyboardInterrupt
     signal.signal(signal.SIGINT, cleanup)
-    time.sleep(45)
+    time.sleep(30)
     while True:
         site_games = None
         try:
-            site_games = get_games()
+            site_games = fetcher.get_games()
         except Exception:
             continue
         site_games = list(filter(lambda x: x.matchid not in excluded, site_games))
@@ -367,15 +434,29 @@ def dispatch(excluded=[], game_nums={}):
             if gameId not in gIds and s.game > 0:
                 gIds.append(gameId)
                 q.put((s, a))
-        # dispatcher.update(q, site_games)
+        dispatcher.update(q, site_games)
         time.sleep(90)
 
 def run_model(model, players, champs, league):
-    return model.predict(players, champs, league, str(datetime.today().date()))
+    return model.predict(players, champs, league, str(datetime.utcnow().date()), True)
 
-def log_bet(blue_team, red_team, game, blue_players, red_players, blue_champs, red_champs, blue_odds, red_odds, blue_win, red_win, league):
+def log_bet(blue_team, red_team, game, blue_players, red_players, blue_champs, red_champs, blue_odds, red_odds, blue_win, red_win, league, on=0):
     cur = constants.db.cursor()
-    cur.execute('INSERT INTO bets (dt, league, blue_team, red_team, game, blue_players, red_players, blue_champs, red_champs, blue_odds, red_odds, blue_win, red_win) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (datetime.now(timezone.utc), league.string, blue_team, red_team, game, str(blue_players), str(red_players), str(blue_champs), str(red_champs), blue_odds, red_odds, blue_win, red_win))
+    cur.execute(r'INSERT INTO bets (dt, league, blue_team, red_team, game, blue_players, red_players, blue_champs, red_champs, blue_odds, red_odds, blue_win, red_win, "on") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (datetime.now(timezone.utc), league.string, blue_team, red_team, game, str(blue_players), str(red_players), str(blue_champs), str(red_champs), blue_odds, red_odds, blue_win, red_win, on))
     constants.db.commit()
     cur.close()
 
+def select_side(x, blue_odds, red_odds, blue_win, vec):
+    if (blue_win > x[0] and
+        blue_odds > x[1] and
+        blue_win > blue_odds + x[2] and
+        vec[0] > x[3] and
+        vec[2] > x[4]):
+        return 1
+    if (1 - blue_win > x[5] and
+        red_odds > x[6] and
+        1 - blue_win > red_odds + x[7] and
+        vec[1] > x[8] and
+        vec[3] > x[9]):
+        return 2
+    return 0
