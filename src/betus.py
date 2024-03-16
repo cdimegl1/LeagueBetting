@@ -6,7 +6,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import selenium.webdriver.chrome.options
 import watcher
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from bettor import GameFetcher
 import signal
 from selenium.webdriver.common.action_chains import ActionChains
@@ -256,18 +256,21 @@ def dispatch(excluded=[], game_nums={}):
     signal.signal(signal.SIGINT, cleanup)
     login(driver)
     matcher = Matcher(excluded)
-    # dispatcher = watcher.Dispatcher(game_nums)
-    # fetcher = GameFetcher()
+    dispatcher = watcher.Dispatcher(game_nums)
+    fetcher = GameFetcher()
     q = Queue()
+    last_time = datetime.now() - timedelta(seconds=61)
     while True:
         try:
-            # dispatcher.update(q, fetcher.get_games())
-            matches = matcher.get_matches(driver)
-            for s, a, gameId in matches:
-                s = DriverlessGame(s)
-                q.put((s, a))
-            sleep(1)
-            print(q.qsize())
+            if (datetime.now() - last_time).seconds > 60:
+                last_time = datetime.now()
+                dispatcher.update(q, fetcher.get_games())
+                matches = matcher.get_matches(driver)
+                for s, a, gameId in matches:
+                    s = DriverlessGame(s)
+                    q.put((s, a))
+                sleep(1)
+                print(q.qsize())
             if not q.empty():
                 _log.info('queue not empty')
                 val = q.get()
@@ -318,7 +321,8 @@ def dispatch(excluded=[], game_nums={}):
                     _log.info(site_game)
                     _log.info('model odds: %f %f', left_win, right_win)
                     _log.info('site odds: %f %f', left_odds, right_odds)
-                    on = select_side(constants.coefs[datetime.utcnow().date()]['all'], blue_odds, red_odds, blue_win, vec)
+                    on = select_side(constants.coefs[datetime.utcnow().date()][site_game.league], blue_odds, red_odds, blue_win, vec)
+                    # on = select_side(constants.coefs[datetime.utcnow().date()]['all'], blue_odds, red_odds, blue_win, vec)
                     if on == 0:
                         _log.info('no bet placed for %s', site_game)
                     if on == 1:
@@ -378,7 +382,8 @@ def dispatch(excluded=[], game_nums={}):
                     _log.info(site_game)
                     _log.info('model odds: %f %f', left_win, right_win)
                     _log.info('site odds: %f %f', left_odds, right_odds)
-                    on = select_side(constants.coefs[datetime.utcnow().date()]['all'], blue_odds, red_odds, blue_win, vec)
+                    on = select_side(constants.coefs[datetime.utcnow().date()][site_game.league], blue_odds, red_odds, blue_win, vec)
+                    # on = select_side(constants.coefs[datetime.utcnow().date()]['all'], blue_odds, red_odds, blue_win, vec)
                     if on == 0:
                         _log.info('no bet placed for %s', site_game)
                     if on == 1:
@@ -393,7 +398,7 @@ def dispatch(excluded=[], game_nums={}):
                             _log.info('BET: %s RIGHT', site_game)
                     log_bet(blue_team, red_team, site_game.game, players[:5], players[-5:], champs[:5], champs[-5:], blue_odds, red_odds, blue_win, red_win, site_game.league, on)
             else:
-                sleep(60)
+                sleep(5)
                 continue
         except Exception as e:
             print(e)
@@ -411,19 +416,28 @@ def log_bet(blue_team, red_team, game, blue_players, red_players, blue_champs, r
 def select_side(x, blue_odds, red_odds, blue_win, vec):
     if (blue_odds > x[0] and
         blue_odds < x[1] and
-        vec[0] > blue_odds + x[2] and
-        vec[2] > blue_odds + x[3] and
-        vec[0] > x[4] and
-        vec[2] > x[5]):
+        vec[0] > x[2] and
+        vec[2] > x[3]):
         return 1
-    if (red_odds > x[6] and
-        red_odds < x[7] and
-        vec[1] > red_odds + x[8] and
-        vec[3] > red_odds + x[9] and
-        vec[1] > x[10] and
-        vec[3] > x[11]):
+    if (red_odds > x[4] and
+        red_odds < x[5] and
+        vec[1] > x[6] and
+        vec[3] > x[7]):
         return 2
     return 0
+    # if (blue_odds > x[0] and
+    #     blue_odds < x[1] and
+    #     vec[0] > x[2] and
+    #     vec[2] > x[3] and
+    #     blue_win > x[4]):
+    #     return 1
+    # if (red_odds > x[5] and
+    #     red_odds < x[6] and
+    #     vec[1] > x[7] and
+    #     vec[3] > x[8] and
+    #     1 - blue_win > x[9]):
+    #     return 2
+    # return 0
     # if (blue_win > x[0] and
     #     blue_odds > x[1] and
     #     blue_win > blue_odds + x[2] and

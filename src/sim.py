@@ -2,7 +2,7 @@ from pandas import DataFrame
 from constants import PREDICTABLE_LEAGUES, db, ALL_LEAGUES, League, load_coefs
 from dateutil import parser
 from ast import literal_eval
-from datetime import timedelta
+from datetime import timedelta, datetime
 from models.mmr import train
 
 class DB_Game:
@@ -44,11 +44,11 @@ def load_db():
 
 db_games = load_db()
 
-def sim_days(start, days, leagues=ALL_LEAGUES):
+def sim_days(start, days, leagues=ALL_LEAGUES, store=False):
     total = 0.0
     total_league_units = dict.fromkeys(ALL_LEAGUES, 0)
     for _ in range(days):
-        units, league_units = sim_day(start, leagues)
+        units, league_units = sim_day(start, leagues, store=store)
         for l, u in league_units.items():
             total_league_units[l] += u
         total += units
@@ -64,37 +64,31 @@ def sim_league(start, days, league):
 def scipy_select(x, game, blue_win, vec):
     if (game.blue_odds > x[0] and
         game.blue_odds < x[1] and
-        vec[0] > game.blue_odds + x[2] and
-        vec[2] > game.blue_odds + x[3] and
-        vec[0] > x[4] and
-        vec[2] > x[5]):
+        vec[0] > x[2] and
+        vec[2] > x[3]):
         return 1
-    if (game.red_odds > x[6] and
-        game.red_odds < x[7] and
-        vec[1] > game.red_odds + x[8] and
-        vec[3] > game.red_odds + x[9] and
-        vec[1] > x[10] and
-        vec[3] > x[11]):
+    if (game.red_odds > x[4] and
+        game.red_odds < x[5] and
+        vec[1] > x[6] and
+        vec[3] > x[7]):
         return 2
     return 0
-    # if (blue_win > x[0] and
-    #     game.blue_odds > x[1] and
+    # if (game.blue_odds > x[0] and
+    #     game.blue_odds < x[1] and
     #     blue_win > game.blue_odds + x[2] and
-    #     vec[0] > x[3] and
-    #     vec[2] > x[4]):
+    #     blue_win > x[3]):
     #     return 1
-    # if (1 - blue_win > x[5] and
-    #     game.red_odds > x[6] and
-    #     1 - blue_win > game.red_odds + x[7] and
-    #     vec[1] > x[8] and
-    #     vec[3] > x[9]):
+    # if (game.red_odds > x[4] and
+    #     game.red_odds < x[5] and
+    #     1 - blue_win > game.red_odds + x[6] and
+    #     1 - blue_win > x[7]):
     #     return 2
     # return 0
 
 coefs = load_coefs()
-def sim_day(date, leagues=ALL_LEAGUES, update=False):
+def sim_day(date, leagues=ALL_LEAGUES, update=False, store=False):
     units = 0.0
-    model = train(str(date.date()), True)
+    model = train(str(date.date()), store)
     db_games_copy = db_games.copy()
     # db_games_copy = [game for game in db_games_copy if game.dt.date() == date.date() and game.league in PREDICTABLE_LEAGUES]
     db_games_copy = [game for game in db_games_copy if game.dt.date() == date.date()]
@@ -109,8 +103,9 @@ def sim_day(date, leagues=ALL_LEAGUES, update=False):
             blue_win = model.predict(game.blue_players+game.red_players, game.blue_champs+game.red_champs, game.league, str(date.date()))
             vec = model.vec(game.blue_players, game.red_players, game.blue_champs, game.red_champs, game.league)
             try:
-                # res = scipy_select(coefs[date.date()][game.league], game, blue_win, vec)
-                res = scipy_select(coefs[date.date()]['all'], game, blue_win, vec)
+                res = scipy_select(coefs[date.date()][game.league], game, blue_win, vec)
+                # res = scipy_select(coefs[date.date()]['all'], game, blue_win, vec)
+                # res = scipy_select(coefs[datetime(2024, 3, 10).date()]['all'], game, blue_win, vec)
             except:
                 print(f'no coefs for {game.league}')
                 if blue_win > .5 and blue_win > game.blue_odds:

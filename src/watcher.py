@@ -160,7 +160,7 @@ class Bilibili(Watcher):
                 self.driver.save_screenshot(screenshotName)
                 im = cv2.imread(screenshotName)
                 while not banner_present(im, self.game.league):
-                    time.sleep(30)
+                    time.sleep(10)
                     self.driver.save_screenshot(screenshotName)
                     im_new = cv2.imread(screenshotName)
                     if mse(im, im_new) < 1:
@@ -197,8 +197,9 @@ class Dispatcher():
             if i not in [game.matchid for game in games]:
                 to_delete.append(i)
                 finished = [watcher.game.matchid for watcher in self.watchers if watcher.game.matchid == i]
+                finished_watchers = [watcher for watcher in self.watchers if watcher.game.matchid == i]
                 self.watchers = [watcher for watcher in self.watchers if watcher.game.matchid not in finished]
-                for watcher in finished:
+                for watcher in finished_watchers:
                     if watcher.is_alive():
                             os.kill(watcher.pid, signal.SIGINT)
                     watcher.join()

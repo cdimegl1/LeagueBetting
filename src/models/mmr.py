@@ -29,7 +29,7 @@ def k_linear(matches, k=100):
         i += step
     return tourn_to_k
 
-def k_exponential(matches, k=75):
+def k_exponential(matches, k=50):
     unique = matches['Tournament'].unique()
     tourn_to_k = {}
     step = k / (2 ** len(unique))
@@ -39,7 +39,7 @@ def k_exponential(matches, k=75):
         tourn_to_k[tourn] = i
     return tourn_to_k
 
-def k_constant(matches, k=100):
+def k_constant(matches, k=50):
     unique = matches['Tournament'].unique()
     tourn_to_k = {}
     for tourn in unique:
@@ -224,7 +224,9 @@ class Champions(Model):
                     for champ in team2_picks:
                         champ_mmrs[champ] += change
             df = pandas.DataFrame.from_dict(champ_mmrs, orient='index')
-            df.to_csv(f'{self.data_path}/all/champion_mmrs.csv')
+            if not exists(f'{self.data_path}/all/{end_date}'):
+                makedirs(f'{self.data_path}/all/{end_date}')
+            df.to_csv(f'{self.data_path}/all/{end_date}/champion_mmrs.csv')
 
 
 class PlayersAndChampions(Model):
@@ -249,8 +251,10 @@ class PlayersAndChampions(Model):
             for league in self.leagues:
                 self.champion_mmrs[league] = self.champion_model.get_mmrs(league, end_date)
         else:
+            mmrs = pandas.read_csv(f'../models/MMR_Champions/all/{end_date}/champion_mmrs.csv', index_col=0)
             for league in self.leagues:
-                self.champion_mmrs[league] = pandas.read_csv(f'{self.champion_model.data_path}/all/champion_mmrs.csv', index_col=0)
+                # print(f'../models/MMR_Champions/all/{end_date}/champion_mmrs.csv')
+                self.champion_mmrs[league] = mmrs
 
     def get_training(self, league: League):
         return pandas.read_csv(f'{self.data_path}/{league.string}/training.csv')
@@ -494,11 +498,11 @@ def train(end_date=str(datetime.utcnow().date()), store=True):
     leagues = ALL_LEAGUES
     players = Players(leagues)
     players.train(k_exponential, start_date='2023-04', end_date=end_date, store=store)
-    champs = Champions(leagues, players, True, end_date)
-    champs.train(k_constant, start_date='2024-00-00', end_date=end_date, store=store)
+    champs = Champions(leagues, players, False, end_date)
+    champs.train(k_constant, start_date='2024-01-01', end_date=end_date, store=store)
     combined = PlayersAndChampions(leagues, champs, end_date)
     if store:
-        combined.create_training_data('2023-04', end_date=end_date)
+        combined.create_training_data('2024-01', end_date=end_date)
         combined.train(stored=True, date=end_date)
     return combined
 

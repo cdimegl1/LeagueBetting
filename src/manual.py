@@ -24,7 +24,7 @@ def from_api(code, league_name, blue_odds, red_odds):
     model = models.mmr.PlayersAndChampions()
     blue_win = run_model(model, players, champs, league)
     vec = model.vec(players[:5], players[-5:], champs[:5], champs[-5:], league)
-    on = select_side(constants.coefs[datetime.utcnow().date()]['all'], blue_odds, red_odds, blue_win, vec)
+    on = select_side(constants.coefs[datetime.utcnow().date()][league], blue_odds, red_odds, blue_win, vec)
     if on == 0:
         print('no bet')
     if on == 1:
@@ -66,7 +66,7 @@ def china(blue_team, red_team, num, players, champs, blue_odds, red_odds):
     model = models.mmr.PlayersAndChampions()
     blue_win = run_model(model, players, champs, league)
     vec = model.vec(players[:5], players[-5:], champs[:5], champs[-5:], league)
-    on = select_side(constants.coefs[datetime.utcnow().date()]['all'], blue_odds, red_odds, blue_win, vec)
+    on = select_side(constants.coefs[datetime.utcnow().date()][league], blue_odds, red_odds, blue_win, vec)
     if on == 0:
         print('no bet')
     if on == 1:
@@ -90,16 +90,13 @@ def log_bet(blue_team, red_team, game, blue_players, red_players, blue_champs, r
 def select_side(x, blue_odds, red_odds, blue_win, vec):
     if (blue_odds > x[0] and
         blue_odds < x[1] and
-        vec[0] > blue_odds + x[2] and
-        vec[2] > blue_odds + x[3] and
-        vec[0] > x[4] and
-        vec[2] > x[5]):
+        blue_win > blue_odds + x[2] and
+        blue_win > x[3]):
         return 1
-    if (red_odds > x[6] and
-        red_odds < x[7] and
-        vec[1] > red_odds + x[8] and
-        vec[3] > red_odds + x[9] and
-        vec[1] > x[10] and
-        vec[3] > x[11]):
+    if (red_odds > x[4] and
+        red_odds < x[5] and
+        1 - blue_win > red_odds + x[6] and
+        1 - blue_win > x[7]):
         return 2
     return 0
+
